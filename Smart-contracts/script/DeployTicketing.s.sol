@@ -1,26 +1,29 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.13;
+pragma solidity ^0.8.20;
 
 import {Script, console2} from "forge-std/Script.sol";
-import {EventTicketing} from "../src/EventTicketing.sol"; // Notre futur contrat
+import {EventTicket1155} from "../src/EventTicket1155.sol";
 
 contract DeployTicketing is Script {
-    EventTicketing public ticketingContract;
+    EventTicket1155 public ticketingContract;
 
     function setUp() public {}
 
     function run() public {
-        // On récupère la clé privée depuis le fichier .env
-        // Assurez-vous d'avoir une variable PRIVATE_KEY définie !
+        // Récupération de la clé privée depuis le .env
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
+
+        // On déduit l'adresse publique (le futur "owner") à partir de la clé privée
+        address deployerAddress = vm.addr(deployerPrivateKey);
 
         vm.startBroadcast(deployerPrivateKey);
 
-        // Déploiement du Master Contract ERC1155
-        ticketingContract = new EventTicketing();
+        // Déploiement en passant le nom de l'événement et l'adresse du propriétaire
+        ticketingContract = new EventTicket1155("Concert Paris 1", deployerAddress);
 
         vm.stopBroadcast();
 
-        console2.log("Contrat de billetterie deploye a l'adresse :", address(ticketingContract));
+        console2.log("Contrat deploye a l'adresse :", address(ticketingContract));
+        console2.log("Proprietaire (API) :", deployerAddress);
     }
 }
