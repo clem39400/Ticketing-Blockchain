@@ -14,3 +14,11 @@ export function formatEventDate(iso?: string | null): string {
 export function formatEth(price: number): string {
   return `${Number(price.toFixed(6))} ETH`;
 }
+
+/** Format a euro amount in French locale (e.g. "12,50 €"). */
+export function formatEur(amount: number): string {
+  return new Intl.NumberFormat('fr-FR', {
+    style: 'currency',
+    currency: 'EUR',
+  }).format(amount);
+}

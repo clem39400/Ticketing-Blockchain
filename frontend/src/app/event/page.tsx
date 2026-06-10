@@ -7,7 +7,8 @@ import { formatEther } from "viem";
 import { useAccount } from "wagmi";
 import { useQuery } from "@tanstack/react-query";
 import { getEventInfo, buyTicketEur, type TicketInfo } from "@/lib/api";
-import { formatEventDate, formatEth } from "@/lib/format";
+import { formatEventDate, formatEth, formatEur } from "@/lib/format";
+import { useEthEurRate } from "@/hooks/useEthEurRate";
 import {
   useOnChainCategories,
   useBuyTickets,
@@ -17,6 +18,7 @@ import {
 } from "@/hooks/useTicketContract";
 import type { OnChainCategory } from "@/contracts/Ticket";
 import { EventBanner } from "@/components/EventBanner";
+import { CardPaymentModal } from "@/components/CardPaymentModal";
 import {
   Calendar,
   Minus,
@@ -87,6 +89,7 @@ function EventDetail() {
   const [qty, setQty] = useState<Record<string, number>>({});
   const [method, setMethod] = useState<PayMethod>("card");
   const [mode, setMode] = useState<Mode>("idle");
+  const [showCardModal, setShowCardModal] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [txHashes, setTxHashes] = useState<string[]>([]);
 
@@ -210,7 +213,28 @@ function EventDetail() {
     }
   };
 
-  const pay = () => (method === "card" ? void startCard() : startWallet());
+  // Ouvre le faux checkout carte (le mint ne démarre qu'après "paiement accepté").
+  const openCardCheckout = () => {
+    if (!address) {
+      setErrorMsg(
+        "Connectez votre wallet : les billets seront mintés vers votre adresse."
+      );
+      setMode("error");
+      return;
+    }
+    const hasSelection = tickets.some(
+      (t) => getQty(ticketKey(t.contractAddress, t.onChainTokenId)) > 0
+    );
+    if (!hasSelection) return;
+    setShowCardModal(true);
+  };
+
+  const pay = () => (method === "card" ? openCardCheckout() : startWallet());
+
+  const { rate } = useEthEurRate();
+  const totalEurLabel = formatEur(
+    Number(formatEther(totalPriceWei)) * rate
+  );
 
   const resetCheckout = () => {
     setMode("idle");
@@ -322,6 +346,18 @@ function EventDetail() {
         )}
       </section>
 
+      {/* Faux checkout carte (façon Stripe, mode test) */}
+      {showCardModal && (
+        <CardPaymentModal
+          amountLabel={totalEurLabel}
+          onClose={() => setShowCardModal(false)}
+          onPaid={() => {
+            setShowCardModal(false);
+            void startCard();
+          }}
+        />
+      )}
+
       {/* Checkout */}
       <Checkout
         totalTickets={totalTickets}
@@ -389,9 +425,12 @@ function TicketRow({
   disabled: boolean;
 }) {
   const soldOut = remaining <= 0;
+  const { rate } = useEthEurRate();
+  const priceEth = onChain ? Number(formatEther(onChain.price)) : ticket.price;
   const priceLabel = onChain
     ? `${formatEther(onChain.price)} ETH`
     : formatEth(ticket.price);
+  const eurLabel = formatEur(priceEth * rate);
 
   return (
     <li
@@ -417,7 +456,14 @@ function TicketRow({
       </div>
 
       <div className="flex items-center gap-4 sm:gap-6 shrink-0">
-        <span className="font-bold text-ink tabular-nums">{priceLabel}</span>
+        <div className="text-right">
+          <span className="block font-bold text-ink tabular-nums">
+            {priceLabel}
+          </span>
+          <span className="block text-xs text-ink-faint tabular-nums">
+            ≈ {eurLabel}
+          </span>
+        </div>
         {soldOut ? (
           <span className="badge">Indisponible</span>
         ) : (
@@ -479,6 +525,9 @@ function Checkout({
   const processing = mode === "card-processing" || mode === "wallet-processing";
   const success = mode === "card-success" || mode === "wallet-success";
   const priceLabel = `${formatEther(totalPriceWei)} ETH`;
+  const { rate } = useEthEurRate();
+  const eurLabel = formatEur(Number(formatEther(totalPriceWei)) * rate);
+  const totalLabel = method === "card" ? eurLabel : priceLabel;
 
   if (success) {
     return (
@@ -524,7 +573,7 @@ function Checkout({
         <h2 className="section-label">Checkout</h2>
         <span className="text-sm text-ink-muted">
           {totalTickets} ticket{totalTickets > 1 ? "s" : ""} ·{" "}
-          <span className="font-bold text-ink">{priceLabel}</span>
+          <span className="font-bold text-ink">{totalLabel}</span>
         </span>
       </div>
 
@@ -536,7 +585,7 @@ function Checkout({
           disabled={processing}
           icon={<CreditCard className="w-5 h-5" />}
           title="Carte bancaire"
-          subtitle="La plateforme minte pour vous"
+          subtitle={`Paiement en euros · ${eurLabel}`}
         />
         <MethodCard
           active={method === "wallet"}
@@ -581,7 +630,7 @@ function Checkout({
         ) : mode === "error" ? (
           "Réessayer"
         ) : method === "card" ? (
-          `Payer par carte · ${priceLabel}`
+          `Payer par carte · ${eurLabel}`
         ) : (
           `Payer ${priceLabel}`
         )}
