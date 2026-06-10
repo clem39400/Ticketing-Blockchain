@@ -23,9 +23,10 @@ public class SellerService {
             String name,
             String description,
             Date eventDate,
-            String eventBanner) {
+            String eventBanner,
+            String contractAddress) {
 
-        return setupEventUsecase.setupEvent(name, description, eventDate, eventBanner);
+        return setupEventUsecase.setupEvent(name, description, eventDate, eventBanner, contractAddress);
 
     }
 
@@ -34,7 +35,8 @@ public class SellerService {
             String ticketName,
             String description,
             int quantity,
-            double price) {
-        return createTicketUsecase.createTicket(eventName, ticketName, description, quantity, price);
+            double price,
+            Long onChainTokenId) {
+        return createTicketUsecase.createTicket(eventName, ticketName, description, quantity, price, onChainTokenId);
     }
 }

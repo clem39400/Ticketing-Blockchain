@@ -20,9 +20,11 @@ public class SetupEventUsecase {
             String name,
             String description,
             Date eventDate,
-            String eventBanner) {
+            String eventBanner,
+            String contractAddress) {
 
         EventDocument event = new EventDocument(name, description, eventDate, eventBanner);
+        event.setContractAddress(contractAddress);
         try {
             repository.insert(event);
             return true;

@@ -19,6 +19,7 @@ public class EventDocument {
     private String description;
     private Date eventDate;
     private String eventBanner;
+    private String contractAddress; // adresse du contrat ERC-1155 deploye pour cet event
 
     public EventDocument(String name, String description, Date eventDate, String eventBanner) {
         this.name = name;

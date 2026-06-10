@@ -16,7 +16,8 @@ public class TicketDocument {
     private String name;
     private String description;
     private int quantity;
-    private double price;
+    private double price;            // prix en euros (paiement fake, usecase #4)
+    private Long onChainTokenId;     // id de la categorie ERC-1155 (= tokenId), pour l'achat ETH on-chain
 
     public TicketDocument(String eventName, String name, String description, int quantity, double price) {
         this.eventName = eventName;

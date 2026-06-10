@@ -32,7 +32,7 @@ class CreateTicketUsecaseTest {
     void createTicket_ok_quand_event_existe() {
         when(eventRepository.existsByName("Concert")).thenReturn(true);
 
-        boolean result = usecase.createTicket("Concert", "VIP", "Premier rang", 100, 49.99);
+        boolean result = usecase.createTicket("Concert", "VIP", "Premier rang", 100, 49.99, 2L);
 
         assertThat(result).isTrue();
         verify(ticketRepository).insert(any(TicketDocument.class));
@@ -42,7 +42,7 @@ class CreateTicketUsecaseTest {
     void createTicket_refuse_quand_event_absent() {
         when(eventRepository.existsByName("Inconnu")).thenReturn(false);
 
-        boolean result = usecase.createTicket("Inconnu", "VIP", "Premier rang", 100, 49.99);
+        boolean result = usecase.createTicket("Inconnu", "VIP", "Premier rang", 100, 49.99, 2L);
 
         assertThat(result).isFalse();
         verify(ticketRepository, never()).insert(any(TicketDocument.class));

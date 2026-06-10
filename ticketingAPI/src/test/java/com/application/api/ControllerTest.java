@@ -35,7 +35,7 @@ class ControllerTest {
 
     @Test
     void setupEvent_retourne_200_si_ok() throws Exception {
-        when(sellerService.setupEvent(any(), any(), any(), any())).thenReturn(true);
+        when(sellerService.setupEvent(any(), any(), any(), any(), any())).thenReturn(true);
 
         mockMvc.perform(post("/setup-event")
                 .param("name", "Concert")
@@ -46,7 +46,7 @@ class ControllerTest {
 
     @Test
     void createTicket_retourne_500_si_echec() throws Exception {
-        when(sellerService.createTicket(any(), any(), any(), anyInt(), anyDouble())).thenReturn(false);
+        when(sellerService.createTicket(any(), any(), any(), anyInt(), anyDouble(), any())).thenReturn(false);
 
         mockMvc.perform(post("/create-ticket")
                 .param("eventName", "Concert")
@@ -59,15 +59,16 @@ class ControllerTest {
 
     @Test
     void eventInfo_retourne_200_avec_le_json() throws Exception {
-        EventInfo info = new EventInfo("Concert", "test", null, null,
-                List.of(new EventInfo.TicketInfo("VIP", "Premier rang", 100, 49.99)));
+        EventInfo info = new EventInfo("Concert", "test", null, null, "0x145997d3db24319792efc6995ff90e9bea1e101e",
+                List.of(new EventInfo.TicketInfo("VIP", "Premier rang", 100, 49.99, 2L)));
         when(buyerService.lookupEventInfo("Concert")).thenReturn(info);
 
         mockMvc.perform(get("/event-info").param("eventName", "Concert"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.name").value("Concert"))
+                .andExpect(jsonPath("$.contractAddress").value("0x145997d3db24319792efc6995ff90e9bea1e101e"))
                 .andExpect(jsonPath("$.tickets[0].name").value("VIP"))
-                .andExpect(jsonPath("$.tickets[0].price").value(49.99));
+                .andExpect(jsonPath("$.tickets[0].onChainTokenId").value(2));
     }
 
     @Test
