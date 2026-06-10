@@ -24,36 +24,39 @@ export function ConnectWalletButton() {
       <div className="relative">
         <button
           onClick={() => setOpen(!open)}
-          className="flex items-center gap-2 bg-white/[0.06] hover:bg-white/[0.09] border border-white/[0.1] hover:border-white/[0.18] rounded-full px-4 py-2 text-sm font-medium transition-all duration-200"
+          className="flex items-center gap-2 bg-card hover:bg-page border border-line-strong rounded-lg px-3.5 py-2 text-sm font-semibold transition-colors"
         >
-          <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]" />
-          <span className="font-mono text-white/90">
+          <span className="w-2 h-2 rounded-full bg-emerald-500" />
+          <span className="font-mono text-ink">
             {address.slice(0, 6)}…{address.slice(-4)}
           </span>
           <ChevronDown
-            className={`w-3.5 h-3.5 text-white/40 transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
+            className={`w-3.5 h-3.5 text-ink-faint transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
           />
         </button>
 
         {open && (
           <>
             <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-            <div className="absolute right-0 top-12 z-50 w-52 rounded-2xl bg-surface-card border border-surface-border shadow-2xl shadow-black/50 overflow-hidden">
-              <div className="px-4 py-3 border-b border-surface-border">
-                <p className="text-xs text-white/40 mb-1">Connecté sur Sepolia</p>
-                <p className="font-mono text-xs text-white/70 truncate">{address}</p>
+            <div className="absolute right-0 top-12 z-50 w-56 rounded-xl bg-card border border-line shadow-lift overflow-hidden">
+              <div className="px-4 py-3 border-b border-line">
+                <p className="text-xs text-ink-faint mb-1">Connecté sur Sepolia</p>
+                <p className="font-mono text-xs text-ink-muted truncate">{address}</p>
               </div>
               <div className="p-1.5">
                 <button
                   onClick={copyAddress}
-                  className="flex items-center gap-2.5 w-full px-3 py-2 text-sm text-white/70 hover:text-white hover:bg-white/[0.06] rounded-xl transition-colors"
+                  className="flex items-center gap-2.5 w-full px-3 py-2 text-sm text-ink-muted hover:text-ink hover:bg-page rounded-lg transition-colors"
                 >
-                  {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
-                  {copied ? 'Copié !' : 'Copier l\'adresse'}
+                  {copied ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
+                  {copied ? 'Copié !' : "Copier l'adresse"}
                 </button>
                 <button
-                  onClick={() => { disconnect(); setOpen(false); }}
-                  className="flex items-center gap-2.5 w-full px-3 py-2 text-sm text-red-400 hover:text-red-300 hover:bg-red-500/[0.08] rounded-xl transition-colors"
+                  onClick={() => {
+                    disconnect();
+                    setOpen(false);
+                  }}
+                  className="flex items-center gap-2.5 w-full px-3 py-2 text-sm text-red-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                 >
                   <LogOut className="w-4 h-4" />
                   Déconnecter
@@ -70,7 +73,7 @@ export function ConnectWalletButton() {
     <button
       onClick={() => connect({ connector: metaMask() })}
       disabled={isPending}
-      className="flex items-center gap-2 btn-primary text-sm"
+      className="btn-primary text-sm"
     >
       <Wallet className="w-4 h-4" />
       {isPending ? 'Connexion…' : 'Connecter le Wallet'}

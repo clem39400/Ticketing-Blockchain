@@ -3,48 +3,45 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { ConnectWalletButton } from './ConnectWalletButton';
-import { useIsOwner } from '@/hooks/useTicketContract';
-import { LayoutDashboard, Ticket } from 'lucide-react';
+import { Ticket } from 'lucide-react';
 import clsx from 'clsx';
+
+const LINKS = [
+  { href: '/', label: 'Events', match: (p: string) => p === '/' || p.startsWith('/event') },
+  { href: '/my-tickets', label: 'My tickets', match: (p: string) => p.startsWith('/my-tickets') },
+  { href: '/admin', label: 'Admin', match: (p: string) => p.startsWith('/admin') },
+];
 
 export function Navbar() {
   const pathname = usePathname();
-  const isOwner = useIsOwner();
-
-  const links = [
-    { href: '/', label: 'Billetterie', icon: Ticket },
-    ...(isOwner ? [{ href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard }] : []),
-  ];
 
   return (
-    <header className="sticky top-0 z-30 border-b border-surface-border bg-surface/80 backdrop-blur-xl">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
-        <div className="flex items-center gap-8">
+    <header className="sticky top-0 z-30 bg-card/90 backdrop-blur-xl border-b border-line">
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
+        <div className="flex items-center gap-9">
           <Link href="/" className="flex items-center gap-2.5 group">
-            <div className="w-8 h-8 rounded-xl bg-gradient-brand flex items-center justify-center shadow-lg shadow-indigo-500/30 group-hover:shadow-indigo-500/50 transition-shadow">
-              <Ticket className="w-4 h-4 text-white" />
+            <div className="w-8 h-8 rounded-lg bg-accent flex items-center justify-center group-hover:scale-105 transition-transform">
+              <Ticket className="w-[18px] h-[18px] text-white" strokeWidth={2.5} />
             </div>
-            <span className="font-bold text-white tracking-tight">
-              Tracea<span className="text-gradient">Ticket</span>
-            </span>
+            <span className="font-extrabold tracking-tight text-ink text-[15px]">TicketMaster</span>
           </Link>
 
           <nav className="hidden sm:flex items-center gap-1">
-            {links.map(({ href, label, icon: Icon }) => (
-              <Link
-                key={href}
-                href={href}
-                className={clsx(
-                  'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200',
-                  pathname === href
-                    ? 'bg-brand-500/15 text-brand-400'
-                    : 'text-white/50 hover:text-white/80 hover:bg-white/[0.05]'
-                )}
-              >
-                <Icon className="w-3.5 h-3.5" />
-                {label}
-              </Link>
-            ))}
+            {LINKS.map(({ href, label, match }) => {
+              const active = match(pathname);
+              return (
+                <Link
+                  key={href}
+                  href={href}
+                  className={clsx(
+                    'px-3 py-1.5 rounded-lg text-sm font-medium transition-colors',
+                    active ? 'text-ink' : 'text-ink-faint hover:text-ink'
+                  )}
+                >
+                  {label}
+                </Link>
+              );
+            })}
           </nav>
         </div>
 
