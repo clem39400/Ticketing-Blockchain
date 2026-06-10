@@ -6,12 +6,17 @@ import "../src/Ticket.sol";
 
 contract TicketScript is Script {
     function run() external {
-        uint256 deployerKey = vm.envUint("PRIVATE_KEY");
-        vm.startBroadcast(deployerKey);
+        vm.startBroadcast();
+
+        address deployer = msg.sender;
 
         Ticket ticket = new Ticket("ipfs://");
 
-        console.log("Ticket deployed at:", address(ticket));
+        ticket.createCategory(0, 0.01 ether, 100, "ipfs://TODO_ENTREE/");
+        ticket.createCategory(1, 0.1 ether,   50, "ipfs://TODO_VIP/");
+
+        console.log("Contrat deploye a:", address(ticket));
+        console.log("Deployer:", deployer);
 
         vm.stopBroadcast();
     }
