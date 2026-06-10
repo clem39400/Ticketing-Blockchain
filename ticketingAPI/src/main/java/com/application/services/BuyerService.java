@@ -1,5 +1,7 @@
 package com.application.services;
 
+import java.util.List;
+
 import org.springframework.stereotype.Service;
 
 import com.application.api.dto.EventInfo;
@@ -14,7 +16,7 @@ public class BuyerService {
         this.lookupEventInfoUsecase = lookupEventInfoUsecase;
     }
 
-    public EventInfo lookupEventInfo(String eventName) {
+    public List<EventInfo> lookupEventInfo(String eventName) {
         return lookupEventInfoUsecase.lookupEventInfo(eventName);
     }
 }

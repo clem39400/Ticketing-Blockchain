@@ -8,6 +8,4 @@ public interface EventRepository extends MongoRepository<EventDocument, String> 
 
     boolean existsByName(String name);
 
-    EventDocument findFirstByName(String name);
-
 }

@@ -21,13 +21,13 @@ public class LookupEventInfoUsecase {
         this.ticketRepository = ticketRepository;
     }
 
-    public EventInfo lookupEventInfo(String eventName) {
-        EventDocument event = eventRepository.findFirstByName(eventName);
+    public List<EventInfo> lookupEventInfo(String eventName) {
+        List<EventDocument> event = eventRepository.findAll();
         if (event == null) {
             return null;
         }
-
         List<TicketDocument> tickets = ticketRepository.findByEventName(eventName);
+
         return EventInfo.from(event, tickets);
     }
 }
