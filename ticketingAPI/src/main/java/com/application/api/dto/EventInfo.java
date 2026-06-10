@@ -14,18 +14,21 @@ public record EventInfo(
         String description,
         Date eventDate,
         String eventBanner,
+        String contractAddress,
         List<TicketInfo> tickets) {
 
     public record TicketInfo(
             String name,
             String description,
             int quantity,
-            double price) {
+            double price,
+            Long onChainTokenId) {
     }
 
     public static EventInfo from(EventDocument event, List<TicketDocument> tickets) {
         List<TicketInfo> ticketInfos = tickets.stream()
-                .map(t -> new TicketInfo(t.getName(), t.getDescription(), t.getQuantity(), t.getPrice()))
+                .map(t -> new TicketInfo(t.getName(), t.getDescription(), t.getQuantity(), t.getPrice(),
+                        t.getOnChainTokenId()))
                 .toList();
 
         return new EventInfo(
@@ -33,6 +36,7 @@ public record EventInfo(
                 event.getDescription(),
                 event.getEventDate(),
                 event.getEventBanner(),
+                event.getContractAddress(),
                 ticketInfos);
     }
 }

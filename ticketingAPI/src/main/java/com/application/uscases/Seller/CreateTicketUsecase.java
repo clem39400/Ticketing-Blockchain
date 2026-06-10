@@ -21,12 +21,14 @@ public class CreateTicketUsecase {
             String ticketName,
             String description,
             int quantity,
-            double price) {
+            double price,
+            Long onChainTokenId) {
 
         if (!eventRepository.existsByName(eventName)) {
             return false;
         }
         TicketDocument ticket = new TicketDocument(eventName, ticketName, description, quantity, price);
+        ticket.setOnChainTokenId(onChainTokenId);
         ticketRepository.insert(ticket);
         return true;
 

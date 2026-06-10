@@ -28,8 +28,9 @@ public class Controller {
             @RequestParam(required = true) String name,
             @RequestParam(required = true) String description,
             @RequestParam(required = true) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) Date eventDate,
-            @RequestParam(required = false) String eventBanner) {
-        boolean created = sellerService.setupEvent(name, description, eventDate, eventBanner);
+            @RequestParam(required = false) String eventBanner,
+            @RequestParam(required = false) String contractAddress) {
+        boolean created = sellerService.setupEvent(name, description, eventDate, eventBanner, contractAddress);
         return created
                 ? ResponseEntity.ok().build()
                 : ResponseEntity.internalServerError().build();
@@ -41,9 +42,10 @@ public class Controller {
             @RequestParam(required = true) String ticketName,
             @RequestParam(required = true) String description,
             @RequestParam(required = true) int quantity,
-            @RequestParam(required = true) double price) {
+            @RequestParam(required = true) double price,
+            @RequestParam(required = false) Long onChainTokenId) {
 
-        boolean created = sellerService.createTicket(eventName, ticketName, description, quantity, price);
+        boolean created = sellerService.createTicket(eventName, ticketName, description, quantity, price, onChainTokenId);
 
         return created
                 ? ResponseEntity.ok().build()

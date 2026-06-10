@@ -27,7 +27,7 @@ class SetupEventUsecaseTest {
 
     @Test
     void setupEvent_persiste_et_retourne_true() {
-        boolean result = usecase.setupEvent("Concert", "test", new Date(), null);
+        boolean result = usecase.setupEvent("Concert", "test", new Date(), null, "0xabc");
 
         assertThat(result).isTrue();
         verify(eventRepository).insert(any(EventDocument.class));
@@ -38,7 +38,7 @@ class SetupEventUsecaseTest {
         when(eventRepository.insert(any(EventDocument.class)))
                 .thenThrow(new RuntimeException("db down"));
 
-        boolean result = usecase.setupEvent("Concert", "test", new Date(), null);
+        boolean result = usecase.setupEvent("Concert", "test", new Date(), null, "0xabc");
 
         assertThat(result).isFalse();
     }
