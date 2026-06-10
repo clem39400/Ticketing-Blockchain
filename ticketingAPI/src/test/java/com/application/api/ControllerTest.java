@@ -46,7 +46,7 @@ class ControllerTest {
 
     @Test
     void createTicket_retourne_500_si_echec() throws Exception {
-        when(sellerService.createTicket(any(), any(), any(), anyInt(), anyDouble(), any())).thenReturn(false);
+        when(sellerService.createTicket(any(), any(), any(), anyInt(), anyDouble())).thenReturn(false);
 
         mockMvc.perform(post("/create-ticket")
                 .param("eventName", "Concert")
@@ -60,7 +60,8 @@ class ControllerTest {
     @Test
     void eventInfo_retourne_200_avec_le_json() throws Exception {
         EventInfo info = new EventInfo("Concert", "test", null, null, "0x145997d3db24319792efc6995ff90e9bea1e101e",
-                List.of(new EventInfo.TicketInfo("VIP", "Premier rang", 100, 49.99, 2L)));
+                List.of(new EventInfo.TicketInfo("VIP", "Premier rang", 100, 49.99, 2L,
+                        "0x145997d3db24319792efc6995ff90e9bea1e101e")));
         when(buyerService.lookupEventInfo("Concert")).thenReturn(info);
 
         mockMvc.perform(get("/event-info").param("eventName", "Concert"))

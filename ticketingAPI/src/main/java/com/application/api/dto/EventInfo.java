@@ -24,17 +24,15 @@ public record EventInfo(
                         String description,
                         int quantity,
                         double price,
-                        Long onChainTokenId) {
+                        Long onChainTokenId,
+                        String contractAddress) {
         }
 
-        public static List<EventInfo> from(List<EventDocument> events, List<TicketDocument> tickets) {
-                List<EventInfo> result = new ArrayList<>();
-                for (EventDocument event : events) {
-                        List<TicketInfo> ticketInfos = tickets.stream()
-                                        .map(t -> new TicketInfo(t.getName(), t.getDescription(), t.getQuantity(),
-                                                        t.getPrice(),
-                                                        t.getOnChainTokenId()))
-                                        .toList();
+    public static EventInfo from(EventDocument event, List<TicketDocument> tickets) {
+        List<TicketInfo> ticketInfos = tickets.stream()
+                .map(t -> new TicketInfo(t.getName(), t.getDescription(), t.getQuantity(), t.getPrice(),
+                        t.getOnChainTokenId(), t.getContractAddress()))
+                .toList();
 
                         result.add(new EventInfo(
                                         event.getName(),
@@ -43,8 +41,6 @@ public record EventInfo(
                                         event.getEventBanner(),
                                         event.getContractAddress(),
                                         ticketInfos));
-                }
-                return result;
+                }return result;
 
-        }
-}
+}}

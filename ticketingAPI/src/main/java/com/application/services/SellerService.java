@@ -35,8 +35,7 @@ public class SellerService {
             String ticketName,
             String description,
             int quantity,
-            double price,
-            Long onChainTokenId) {
-        return createTicketUsecase.createTicket(eventName, ticketName, description, quantity, price, onChainTokenId);
+            double price) {
+        return createTicketUsecase.createTicket(eventName, ticketName, description, quantity, price);
     }
 }
