@@ -1,29 +1,25 @@
-// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {Script, console2} from "forge-std/Script.sol";
-import {EventTicket1155} from "../src/EventTicket1155.sol";
+import "forge-std/Script.sol";
+import "../src/EventTicket1155.sol";
 
 contract DeployTicketing is Script {
-    EventTicket1155 public ticketingContract;
+    function run() external {
+        vm.startBroadcast();  // ← plus de private key ici, Forge la prend du --private-key
 
-    function setUp() public {}
+        address deployer = msg.sender;
 
-    function run() public {
-        // Récupération de la clé privée depuis le .env
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
+        EventTicket1155 eventContract = new EventTicket1155(
+            "Super Concert Test",
+            deployer
+        );
 
-        // On déduit l'adresse publique (le futur "owner") à partir de la clé privée
-        address deployerAddress = vm.addr(deployerPrivateKey);
+        eventContract.createCategory("Entree standard", 0.01 ether, 500, "ipfs://TODO1/");
+        eventContract.createCategory("VIP",             0.1 ether,   50, "ipfs://TODO2/");
 
-        vm.startBroadcast(deployerPrivateKey);
-
-        // Déploiement en passant le nom de l'événement et l'adresse du propriétaire
-        ticketingContract = new EventTicket1155("Concert Paris 1", deployerAddress);
+        console.log("Contrat deploye a:", address(eventContract));
 
         vm.stopBroadcast();
-
-        console2.log("Contrat deploye a l'adresse :", address(ticketingContract));
-        console2.log("Proprietaire (API) :", deployerAddress);
     }
 }
