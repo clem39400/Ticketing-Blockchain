@@ -22,13 +22,14 @@ public record EventInfo(
             String description,
             int quantity,
             double price,
-            Long onChainTokenId) {
+            Long onChainTokenId,
+            String contractAddress) {
     }
 
     public static EventInfo from(EventDocument event, List<TicketDocument> tickets) {
         List<TicketInfo> ticketInfos = tickets.stream()
                 .map(t -> new TicketInfo(t.getName(), t.getDescription(), t.getQuantity(), t.getPrice(),
-                        t.getOnChainTokenId()))
+                        t.getOnChainTokenId(), t.getContractAddress()))
                 .toList();
 
         return new EventInfo(

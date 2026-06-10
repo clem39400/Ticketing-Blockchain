@@ -42,10 +42,9 @@ public class Controller {
             @RequestParam(required = true) String ticketName,
             @RequestParam(required = true) String description,
             @RequestParam(required = true) int quantity,
-            @RequestParam(required = true) double price,
-            @RequestParam(required = false) Long onChainTokenId) {
+            @RequestParam(required = true) double price) {
 
-        boolean created = sellerService.createTicket(eventName, ticketName, description, quantity, price, onChainTokenId);
+        boolean created = sellerService.createTicket(eventName, ticketName, description, quantity, price);
 
         return created
                 ? ResponseEntity.ok().build()
