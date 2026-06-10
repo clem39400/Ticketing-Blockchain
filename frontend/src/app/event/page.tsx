@@ -1,20 +1,24 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { formatEther } from "viem";
 import { useAccount } from "wagmi";
+import { useQuery } from "@tanstack/react-query";
+import { getEventInfo, buyTicketEur, type TicketInfo } from "@/lib/api";
+import { formatEventDate, formatEth } from "@/lib/format";
 import {
-  useEventName,
-  useCategoryCount,
-  useAllCategories,
-  useMintForETH,
+  useOnChainCategories,
+  useBuyTickets,
+  computeBuyValue,
+  ticketKey,
+  isOnChain,
 } from "@/hooks/useTicketContract";
-import type { TicketCategory } from "@/contracts/EventTicket1155";
+import type { OnChainCategory } from "@/contracts/Ticket";
 import { EventBanner } from "@/components/EventBanner";
 import {
   Calendar,
-  MapPin,
   Minus,
   Plus,
   CreditCard,
@@ -27,11 +31,6 @@ import {
 } from "lucide-react";
 import clsx from "clsx";
 
-const EVENT_META = {
-  date: "15 septembre 2025 · 20:00",
-  location: "Paris, France",
-};
-
 type PayMethod = "card" | "wallet";
 type Mode =
   | "idle"
@@ -41,157 +40,282 @@ type Mode =
   | "wallet-success"
   | "error";
 
+type WalletQueueItem = {
+  contractAddress: string;
+  tokenId: number;
+  quantity: number;
+  valueWei: bigint;
+};
+
 export default function EventDetailPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 py-20 text-center">
+          <Loader2 className="w-6 h-6 text-ink-faint mx-auto spin-slow" />
+        </div>
+      }
+    >
+      <EventDetail />
+    </Suspense>
+  );
+}
+
+function EventDetail() {
+  const searchParams = useSearchParams();
+  const eventName = searchParams.get("name") ?? "";
+
   const { address } = useAccount();
-  const { data: eventName } = useEventName();
-  const { data: count } = useCategoryCount();
-  const catCount = count ? Number(count) : 0;
-  const { categories, isLoading, refetch } = useAllCategories(catCount);
+
+  const {
+    data: event,
+    isLoading: eventLoading,
+    isError: eventError,
+    error: eventErr,
+  } = useQuery({
+    queryKey: ["event-info", eventName],
+    queryFn: () => getEventInfo(eventName),
+    enabled: !!eventName,
+  });
+
+  const tickets = useMemo(() => event?.tickets ?? [], [event]);
+
+  // On-chain state (minted / price) per ticket type — fallback to DB values.
+  const { categories: onChain, refetch: refetchOnChain } =
+    useOnChainCategories(tickets);
 
   const [qty, setQty] = useState<Record<string, number>>({});
   const [method, setMethod] = useState<PayMethod>("card");
   const [mode, setMode] = useState<Mode>("idle");
-  const [queue, setQueue] = useState<{ tokenId: bigint; price: bigint }[]>([]);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [txHashes, setTxHashes] = useState<string[]>([]);
+
+  // Wallet (ETH) sequential purchase queue — one buy() per ticket TYPE.
+  const [queue, setQueue] = useState<WalletQueueItem[]>([]);
   const [qIndex, setQIndex] = useState(0);
 
-  const { mint, hash, isConfirmed, error, reset } = useMintForETH();
+  const { buy, hash, isConfirmed, error: buyError, reset } = useBuyTickets();
 
-  const getQty = (id: string) => qty[id] ?? 0;
-  const setQtyFor = (id: string, v: number) =>
-    setQty((q) => ({ ...q, [id]: Math.max(0, v) }));
+  const getQty = (key: string) => qty[key] ?? 0;
+  const setQtyFor = (key: string, v: number) =>
+    setQty((q) => ({ ...q, [key]: Math.max(0, v) }));
 
-  const { totalTickets, totalPrice } = useMemo(() => {
-    let tickets = 0;
-    let price = BigInt(0);
-    for (const c of categories) {
-      const n = getQty(c.tokenId.toString());
-      tickets += n;
-      price += c.price * BigInt(n);
+  const remainingOf = (t: TicketInfo): number => {
+    const cat = onChain[ticketKey(t.contractAddress, t.onChainTokenId)];
+    if (cat) return Number(cat.maxSupply - cat.minted);
+    return t.quantity; // DB fallback (max supply)
+  };
+
+  const { totalTickets, totalPriceWei } = useMemo(() => {
+    let count = 0;
+    let wei = BigInt(0);
+    for (const t of tickets) {
+      const n = getQty(ticketKey(t.contractAddress, t.onChainTokenId));
+      if (n === 0) continue;
+      count += n;
+      const cat = onChain[ticketKey(t.contractAddress, t.onChainTokenId)];
+      wei += computeBuyValue(t.price, n, cat?.price);
     }
-    return { totalTickets: tickets, totalPrice: price };
+    return { totalTickets: count, totalPriceWei: wei };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [categories, qty]);
+  }, [tickets, qty, onChain]);
 
-  // Sequential on-chain minting for the wallet flow.
+  /* ----- Wallet (ETH) flow: sequential buy() per ticket type ----- */
+
   useEffect(() => {
     if (mode !== "wallet-processing") return;
-    if (error) {
+    if (buyError) {
+      setErrorMsg(buyError.message?.slice(0, 160) ?? "La transaction a échoué.");
       setMode("error");
       return;
     }
     if (isConfirmed) {
+      if (hash) setTxHashes((prev) => [...prev, hash]);
       const next = qIndex + 1;
       if (next < queue.length) {
         setQIndex(next);
         reset();
-        mint(queue[next].tokenId, queue[next].price);
+        const item = queue[next];
+        buy(item.contractAddress, item.tokenId, item.quantity, item.valueWei);
       } else {
         setMode("wallet-success");
-        refetch();
+        refetchOnChain();
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isConfirmed, error, mode]);
+  }, [isConfirmed, buyError, mode]);
 
   const startWallet = () => {
-    const items: { tokenId: bigint; price: bigint }[] = [];
-    for (const c of categories) {
-      const n = getQty(c.tokenId.toString());
-      for (let i = 0; i < n; i++)
-        items.push({ tokenId: c.tokenId, price: c.price });
+    const items: WalletQueueItem[] = [];
+    for (const t of tickets) {
+      if (!isOnChain(t)) continue; // not deployed yet — cannot be bought
+      const n = getQty(ticketKey(t.contractAddress, t.onChainTokenId));
+      if (n === 0) continue;
+      const cat = onChain[ticketKey(t.contractAddress, t.onChainTokenId)];
+      items.push({
+        contractAddress: t.contractAddress,
+        tokenId: t.onChainTokenId,
+        quantity: n,
+        valueWei: computeBuyValue(t.price, n, cat?.price),
+      });
     }
     if (items.length === 0) return;
     setQueue(items);
     setQIndex(0);
+    setTxHashes([]);
+    setErrorMsg(null);
     setMode("wallet-processing");
     reset();
-    mint(items[0].tokenId, items[0].price);
+    buy(items[0].contractAddress, items[0].tokenId, items[0].quantity, items[0].valueWei);
   };
 
-  const startCard = () => {
+  /* ----- Carte bancaire flow: backend mints to the connected wallet ----- */
+
+  const startCard = async () => {
+    if (!address) {
+      setErrorMsg(
+        "Connectez votre wallet : les billets seront mintés vers votre adresse."
+      );
+      setMode("error");
+      return;
+    }
+    const selected = tickets.filter(
+      (t) => getQty(ticketKey(t.contractAddress, t.onChainTokenId)) > 0
+    );
+    if (selected.length === 0) return;
+
     setMode("card-processing");
-    // Fake payment: the platform would mint via the API after a real charge.
-    setTimeout(() => setMode("card-success"), 1600);
+    setErrorMsg(null);
+    setTxHashes([]);
+    try {
+      const hashes: string[] = [];
+      for (const t of selected) {
+        const n = getQty(ticketKey(t.contractAddress, t.onChainTokenId));
+        const { txHash } = await buyTicketEur({
+          eventName,
+          ticketName: t.name,
+          quantity: n,
+          buyerAddress: address,
+        });
+        hashes.push(txHash);
+        setTxHashes([...hashes]);
+      }
+      setMode("card-success");
+      refetchOnChain();
+    } catch (err) {
+      setErrorMsg(
+        err instanceof Error ? err.message : "Le paiement a échoué."
+      );
+      setMode("error");
+    }
   };
 
-  const pay = () => (method === "card" ? startCard() : startWallet());
+  const pay = () => (method === "card" ? void startCard() : startWallet());
 
   const resetCheckout = () => {
     setMode("idle");
     setQty({});
     setQueue([]);
     setQIndex(0);
+    setTxHashes([]);
+    setErrorMsg(null);
     reset();
   };
 
-  return (
-    <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8">
-      <Link
-        href="/"
-        className="inline-flex items-center gap-1.5 text-sm text-ink-muted hover:text-ink mb-5 transition-colors"
-      >
-        <ArrowLeft className="w-4 h-4" />
-        Tous les events
-      </Link>
+  /* ----- Render ----- */
 
+  if (!eventName) {
+    return (
+      <PageShell>
+        <Notice
+          title="Événement non spécifié"
+          subtitle="Aucun nom d'événement dans l'URL."
+        />
+      </PageShell>
+    );
+  }
+
+  if (eventLoading) {
+    return (
+      <PageShell>
+        <div className="py-20 text-center">
+          <Loader2 className="w-6 h-6 text-ink-faint mx-auto spin-slow" />
+        </div>
+      </PageShell>
+    );
+  }
+
+  if (eventError || !event) {
+    return (
+      <PageShell>
+        <Notice
+          title="Événement introuvable"
+          subtitle={
+            eventErr instanceof Error
+              ? eventErr.message
+              : "Impossible de charger cet événement."
+          }
+        />
+      </PageShell>
+    );
+  }
+
+  return (
+    <PageShell>
       {/* Banner */}
       <div className="rounded-2xl overflow-hidden border border-line h-52 sm:h-64 mb-6">
-        <EventBanner name={(eventName as string) ?? "Event"} />
+        <EventBanner name={event.name} src={event.eventBanner} />
       </div>
 
       {/* Title */}
       <h1 className="text-3xl font-extrabold tracking-tight text-ink mb-3">
-        {(eventName as string) ?? "Event"}
+        {event.name}
       </h1>
-      <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 text-sm text-ink-muted mb-8">
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 text-sm text-ink-muted mb-4">
         <span className="flex items-center gap-1.5">
           <Calendar className="w-4 h-4" />
-          {EVENT_META.date}
-        </span>
-        <span className="flex items-center gap-1.5">
-          <MapPin className="w-4 h-4" />
-          {EVENT_META.location}
+          {formatEventDate(event.eventDate)}
         </span>
       </div>
+      <p className="text-sm text-ink-muted mb-8">{event.description}</p>
 
       {/* Tickets */}
       <section className="card overflow-hidden mb-6">
         <div className="flex items-center justify-between px-5 sm:px-6 py-4 border-b border-line">
           <h2 className="section-label">Tickets</h2>
-          {categories.length > 0 && (
+          {tickets.length > 0 && (
             <span className="text-xs text-ink-faint">
               à partir de{" "}
               <span className="font-semibold text-ink">
-                {formatEther(
-                  categories.reduce(
-                    (m, c) => (c.price < m ? c.price : m),
-                    categories[0].price,
-                  ),
-                )}{" "}
-                ETH
+                {formatEth(
+                  tickets.reduce(
+                    (m, t) => (t.price < m ? t.price : m),
+                    tickets[0].price
+                  )
+                )}
               </span>
             </span>
           )}
         </div>
 
-        {isLoading ? (
-          <div className="py-12 text-center">
-            <Loader2 className="w-6 h-6 text-ink-faint mx-auto spin-slow" />
-          </div>
-        ) : categories.length === 0 ? (
+        {tickets.length === 0 ? (
           <div className="py-12 text-center text-sm text-ink-faint">
             Aucune catégorie de billet pour cet événement.
           </div>
         ) : (
           <ul>
-            {categories.map((cat, i) => (
-              <CategoryRow
-                key={cat.tokenId.toString()}
-                cat={cat}
-                last={i === categories.length - 1}
-                qty={getQty(cat.tokenId.toString())}
-                onChange={(v) => setQtyFor(cat.tokenId.toString(), v)}
-                disabled={mode !== "idle"}
+            {tickets.map((t, i) => (
+              <TicketRow
+                key={ticketKey(t.contractAddress, t.onChainTokenId)}
+                ticket={t}
+                onChain={onChain[ticketKey(t.contractAddress, t.onChainTokenId)]}
+                remaining={remainingOf(t)}
+                last={i === tickets.length - 1}
+                qty={getQty(ticketKey(t.contractAddress, t.onChainTokenId))}
+                onChange={(v) =>
+                  setQtyFor(ticketKey(t.contractAddress, t.onChainTokenId), v)
+                }
+                disabled={(mode !== "idle" && mode !== "error") || !isOnChain(t)}
               />
             ))}
           </ul>
@@ -201,61 +325,99 @@ export default function EventDetailPage() {
       {/* Checkout */}
       <Checkout
         totalTickets={totalTickets}
-        totalPrice={totalPrice}
+        totalPriceWei={totalPriceWei}
         method={method}
         setMethod={setMethod}
         mode={mode}
         address={address}
-        hash={hash}
-        error={error}
+        txHashes={txHashes}
+        errorMsg={errorMsg}
         onPay={pay}
         onReset={resetCheckout}
         progress={{ current: qIndex + 1, total: queue.length }}
       />
+    </PageShell>
+  );
+}
+
+/* ---------- Layout helpers ---------- */
+
+function PageShell({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8">
+      <Link
+        href="/"
+        className="inline-flex items-center gap-1.5 text-sm text-ink-muted hover:text-ink mb-5 transition-colors"
+      >
+        <ArrowLeft className="w-4 h-4" />
+        Tous les events
+      </Link>
+      {children}
     </div>
   );
 }
 
-/* ---------- Category row ---------- */
+function Notice({ title, subtitle }: { title: string; subtitle: string }) {
+  return (
+    <div className="card text-center py-20">
+      <div className="w-14 h-14 rounded-2xl bg-page border border-line flex items-center justify-center mx-auto mb-4">
+        <AlertCircle className="w-7 h-7 text-ink-faint" />
+      </div>
+      <p className="font-semibold text-ink mb-1">{title}</p>
+      <p className="text-sm text-ink-faint">{subtitle}</p>
+    </div>
+  );
+}
 
-function CategoryRow({
-  cat,
+/* ---------- Ticket row ---------- */
+
+function TicketRow({
+  ticket,
+  onChain,
+  remaining,
   last,
   qty,
   onChange,
   disabled,
 }: {
-  cat: TicketCategory;
+  ticket: TicketInfo;
+  onChain?: OnChainCategory;
+  remaining: number;
   last: boolean;
   qty: number;
   onChange: (v: number) => void;
   disabled: boolean;
 }) {
-  const soldOut = cat.remaining === BigInt(0);
-  const maxReachable = Number(cat.remaining);
+  const soldOut = remaining <= 0;
+  const priceLabel = onChain
+    ? `${formatEther(onChain.price)} ETH`
+    : formatEth(ticket.price);
 
   return (
     <li
       className={clsx(
         "flex items-center justify-between gap-4 px-5 sm:px-6 py-5",
-        !last && "border-b border-line",
+        !last && "border-b border-line"
       )}
     >
       <div className="min-w-0">
-        <p className="font-semibold text-ink">{cat.name}</p>
+        <p className="font-semibold text-ink">{ticket.name}</p>
+        {ticket.description && (
+          <p className="text-xs text-ink-muted mt-0.5 line-clamp-1">
+            {ticket.description}
+          </p>
+        )}
         <p className="text-xs text-ink-faint mt-0.5">
           {soldOut ? (
             <span className="text-red-500 font-medium">Épuisé</span>
           ) : (
-            `${cat.remaining.toString()} restant${cat.remaining > BigInt(1) ? "s" : ""}`
+            `${remaining} restant${remaining > 1 ? "s" : ""}`
           )}
         </p>
       </div>
 
       <div className="flex items-center gap-4 sm:gap-6 shrink-0">
-        <span className="font-bold text-ink tabular-nums">
-          {formatEther(cat.price)} ETH
-        </span>
+        <span className="font-bold text-ink tabular-nums">{priceLabel}</span>
         {soldOut ? (
           <span className="badge">Indisponible</span>
         ) : (
@@ -274,7 +436,7 @@ function CategoryRow({
             <button
               className="stepper-btn bg-ink text-white border-ink hover:bg-black hover:text-white"
               onClick={() => onChange(qty + 1)}
-              disabled={disabled || qty >= maxReachable}
+              disabled={disabled || qty >= remaining}
               aria-label="Ajouter"
             >
               <Plus className="w-4 h-4" />
@@ -290,25 +452,25 @@ function CategoryRow({
 
 function Checkout({
   totalTickets,
-  totalPrice,
+  totalPriceWei,
   method,
   setMethod,
   mode,
   address,
-  hash,
-  error,
+  txHashes,
+  errorMsg,
   onPay,
   onReset,
   progress,
 }: {
   totalTickets: number;
-  totalPrice: bigint;
+  totalPriceWei: bigint;
   method: PayMethod;
   setMethod: (m: PayMethod) => void;
   mode: Mode;
   address?: `0x${string}`;
-  hash?: `0x${string}`;
-  error: Error | null;
+  txHashes: string[];
+  errorMsg: string | null;
   onPay: () => void;
   onReset: () => void;
   progress: { current: number; total: number };
@@ -316,7 +478,7 @@ function Checkout({
   const empty = totalTickets === 0;
   const processing = mode === "card-processing" || mode === "wallet-processing";
   const success = mode === "card-success" || mode === "wallet-success";
-  const priceLabel = `${formatEther(totalPrice)} ETH`;
+  const priceLabel = `${formatEther(totalPriceWei)} ETH`;
 
   if (success) {
     return (
@@ -325,18 +487,24 @@ function Checkout({
         <h3 className="text-lg font-bold text-ink mb-1">Paiement confirmé</h3>
         <p className="text-sm text-ink-muted mb-5">
           {mode === "card-success"
-            ? "Paiement par carte simulé - vos billets seront mintés par la plateforme."
+            ? "Paiement par carte accepté - vos billets ont été mintés par la plateforme vers votre wallet."
             : "Vos billets NFT ont été mintés dans votre wallet."}
         </p>
-        {hash && (
-          <a
-            href={`https://sepolia.etherscan.io/tx/${hash}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 text-xs text-ink-muted hover:text-ink mb-5"
-          >
-            Voir la dernière transaction <ExternalLink className="w-3 h-3" />
-          </a>
+        {txHashes.length > 0 && (
+          <div className="flex flex-col items-center gap-1 mb-5">
+            {txHashes.map((h) => (
+              <a
+                key={h}
+                href={`https://sepolia.etherscan.io/tx/${h}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-xs text-ink-muted hover:text-ink font-mono"
+              >
+                {h.slice(0, 10)}…{h.slice(-8)}{" "}
+                <ExternalLink className="w-3 h-3" />
+              </a>
+            ))}
+          </div>
         )}
         <div className="flex items-center justify-center gap-3">
           <Link href="/my-tickets" className="btn-primary">
@@ -384,29 +552,31 @@ function Checkout({
         <div className="flex items-start gap-2 p-3 rounded-xl bg-red-50 border border-red-200 text-red-600 text-sm mb-4">
           <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
           <span className="break-all">
-            {error?.message?.slice(0, 140) ?? "La transaction a échoué."}
+            {errorMsg ?? "La transaction a échoué."}
           </span>
         </div>
       )}
 
-      {method === "wallet" && !address && (
+      {!address && (
         <div className="flex items-center gap-2 p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-700 text-sm mb-4">
           <AlertCircle className="w-4 h-4 shrink-0" />
-          Connectez votre wallet pour payer en ETH.
+          {method === "wallet"
+            ? "Connectez votre wallet pour payer en ETH."
+            : "Connectez votre wallet : les billets seront mintés vers votre adresse."}
         </div>
       )}
 
       <button
         onClick={mode === "error" ? onReset : onPay}
-        disabled={empty || processing || (method === "wallet" && !address)}
+        disabled={empty || processing || !address}
         className="btn-primary w-full py-3.5 text-base"
       >
         {processing ? (
           <>
             <Loader2 className="w-4 h-4 spin-slow" />
             {mode === "wallet-processing"
-              ? `Mint ${progress.current}/${progress.total}…`
-              : "Paiement en cours…"}
+              ? `Achat ${progress.current}/${progress.total}…`
+              : "Mint en cours par la plateforme…"}
           </>
         ) : mode === "error" ? (
           "Réessayer"
@@ -419,7 +589,9 @@ function Checkout({
 
       {method === "card" && (
         <p className="text-center text-xs text-ink-faint mt-3">
-          Paiement par carte simulé (aucun débit réel).
+          {mode === "card-processing"
+            ? "Paiement accepté - mint on-chain en cours, cela peut prendre 30 à 60 secondes…"
+            : "Paiement en euros simulé (aucun débit réel) - les billets sont mintés on-chain par la plateforme."}
         </p>
       )}
     </section>
@@ -449,7 +621,7 @@ function MethodCard({
         "text-left rounded-xl border p-4 transition-all disabled:opacity-60",
         active
           ? "border-line-strong bg-page ring-1 ring-ink/10"
-          : "border-line hover:border-ink-faint",
+          : "border-line hover:border-ink-faint"
       )}
     >
       <div className="flex items-center gap-2 mb-1.5 text-ink">

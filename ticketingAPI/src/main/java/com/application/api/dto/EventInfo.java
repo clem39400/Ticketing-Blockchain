@@ -1,6 +1,5 @@
 package com.application.api.dto;
 
-import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 
@@ -28,19 +27,18 @@ public record EventInfo(
                         String contractAddress) {
         }
 
-    public static EventInfo from(EventDocument event, List<TicketDocument> tickets) {
-        List<TicketInfo> ticketInfos = tickets.stream()
-                .map(t -> new TicketInfo(t.getName(), t.getDescription(), t.getQuantity(), t.getPrice(),
-                        t.getOnChainTokenId(), t.getContractAddress()))
-                .toList();
+        public static EventInfo from(EventDocument event, List<TicketDocument> tickets) {
+                List<TicketInfo> ticketInfos = tickets.stream()
+                                .map(t -> new TicketInfo(t.getName(), t.getDescription(), t.getQuantity(),
+                                                t.getPrice(), t.getOnChainTokenId(), t.getContractAddress()))
+                                .toList();
 
-                        result.add(new EventInfo(
-                                        event.getName(),
-                                        event.getDescription(),
-                                        event.getEventDate(),
-                                        event.getEventBanner(),
-                                        event.getContractAddress(),
-                                        ticketInfos));
-                }return result;
-
-}}
+                return new EventInfo(
+                                event.getName(),
+                                event.getDescription(),
+                                event.getEventDate(),
+                                event.getEventBanner(),
+                                event.getContractAddress(),
+                                ticketInfos);
+        }
+}

@@ -6,140 +6,186 @@ import {
   useWriteContract,
   useWaitForTransactionReceipt,
   useAccount,
+  useBalance,
+  usePublicClient,
 } from 'wagmi';
-import { CONTRACT_ADDRESS, EVENT_TICKET_ABI } from '@/contracts/EventTicket1155';
-import type { TicketCategory } from '@/contracts/EventTicket1155';
+import { useQuery } from '@tanstack/react-query';
+import { parseEther, type Address } from 'viem';
+import { TICKET_ABI, type OnChainCategory } from '@/contracts/Ticket';
+import type { TicketInfo } from '@/lib/api';
 
-const BASE = {
-  address: CONTRACT_ADDRESS,
-  abi: EVENT_TICKET_ABI,
-} as const;
-
-export function useEventName() {
-  return useReadContract({ ...BASE, functionName: 'eventName' });
+/** Stable key for a (contractAddress, tokenId) pair. Null parts (ticket not
+ *  yet deployed on-chain) map to 'pending' so the key stays usable in React. */
+export function ticketKey(
+  contractAddress: string | null,
+  tokenId: number | null
+): string {
+  return `${(contractAddress ?? 'pending').toLowerCase()}-${tokenId ?? 'pending'}`;
 }
 
-export function useCategoryCount() {
-  return useReadContract({ ...BASE, functionName: 'getCategoryCount' });
+/** A ticket whose contract is deployed and on-chain category created. */
+export type OnChainTicket = TicketInfo & {
+  contractAddress: string;
+  onChainTokenId: number;
+};
+
+/** Tickets fresh out of the DB can have null contractAddress/onChainTokenId
+ *  while the backend is still deploying — those cannot be read or bought. */
+export function isOnChain(t: TicketInfo): t is OnChainTicket {
+  return t.contractAddress !== null && t.onChainTokenId !== null;
 }
 
-export function useContractOwner() {
-  return useReadContract({ ...BASE, functionName: 'owner' });
+/**
+ * Exact wei amount expected by Ticket.buy (msg.value == quantity * price).
+ * Prefer the on-chain price when known; otherwise derive it from the DB
+ * price in ETH via parseEther(String(price)).
+ */
+export function computeBuyValue(
+  priceEth: number,
+  quantity: number,
+  onChainPrice?: bigint
+): bigint {
+  const unit = onChainPrice ?? parseEther(String(priceEth));
+  return unit * BigInt(quantity);
 }
 
-export function useIsOwner() {
+/* ------------------------------------------------------------------ */
+/* Reads                                                               */
+/* ------------------------------------------------------------------ */
+
+/** getCategory(tokenId) on one ticket contract. */
+export function useCategory(contractAddress?: string, tokenId?: number) {
+  const { data, ...rest } = useReadContract({
+    address: contractAddress as Address | undefined,
+    abi: TICKET_ABI,
+    functionName: 'getCategory',
+    args: tokenId !== undefined ? [BigInt(tokenId)] : undefined,
+    query: {
+      enabled: !!contractAddress && tokenId !== undefined,
+      refetchInterval: 30_000,
+    },
+  });
+
+  const category: OnChainCategory | undefined = data
+    ? { price: data[0], maxSupply: data[1], minted: data[2], uri: data[3] }
+    : undefined;
+
+  return { category, ...rest };
+}
+
+/**
+ * getCategory for a LIST of ticket types (one contract call per type).
+ * Returns a map keyed by ticketKey(contractAddress, onChainTokenId).
+ */
+export function useOnChainCategories(tickets: TicketInfo[]) {
+  const onChainTickets = tickets.filter(isOnChain);
+
+  const { data, isLoading, refetch } = useReadContracts({
+    contracts: onChainTickets.map((t) => ({
+      address: t.contractAddress as Address,
+      abi: TICKET_ABI,
+      functionName: 'getCategory' as const,
+      args: [BigInt(t.onChainTokenId)] as const,
+    })),
+    query: { enabled: onChainTickets.length > 0, refetchInterval: 30_000 },
+  });
+
+  const categories: Record<string, OnChainCategory> = {};
+  onChainTickets.forEach((t, i) => {
+    const entry = data?.[i];
+    if (entry?.status === 'success') {
+      const raw = entry.result as readonly [bigint, bigint, bigint, string];
+      categories[ticketKey(t.contractAddress, t.onChainTokenId)] = {
+        price: raw[0],
+        maxSupply: raw[1],
+        minted: raw[2],
+        uri: raw[3],
+      };
+    }
+  });
+
+  return { categories, isLoading, refetch };
+}
+
+/**
+ * balanceOf(account, tokenId) for a LIST of ticket types (my-tickets page).
+ * Returns a map keyed by ticketKey(contractAddress, onChainTokenId).
+ */
+export function useTicketBalances(tickets: TicketInfo[]) {
   const { address } = useAccount();
-  const { data: owner } = useContractOwner();
-  return (
-    !!address &&
-    !!owner &&
-    address.toLowerCase() === owner.toLowerCase()
-  );
+  const onChainTickets = tickets.filter(isOnChain);
+
+  const { data, isLoading, refetch } = useReadContracts({
+    contracts: onChainTickets.map((t) => ({
+      address: t.contractAddress as Address,
+      abi: TICKET_ABI,
+      functionName: 'balanceOf' as const,
+      args: address
+        ? ([address, BigInt(t.onChainTokenId)] as const)
+        : undefined,
+    })),
+    query: {
+      enabled: !!address && onChainTickets.length > 0,
+      refetchInterval: 30_000,
+    },
+  });
+
+  const balances: Record<string, number> = {};
+  onChainTickets.forEach((t, i) => {
+    const entry = data?.[i];
+    if (entry?.status === 'success') {
+      balances[ticketKey(t.contractAddress, t.onChainTokenId)] = Number(
+        entry.result as bigint
+      );
+    }
+  });
+
+  return { balances, isLoading, refetch };
 }
 
-export function useAllCategories(count: number) {
-  const catContracts = Array.from({ length: count }, (_, i) => ({
-    ...BASE,
-    functionName: 'categories' as const,
-    args: [BigInt(i + 1)] as const,
-  }));
-
-  const remContracts = Array.from({ length: count }, (_, i) => ({
-    ...BASE,
-    functionName: 'remainingTickets' as const,
-    args: [BigInt(i + 1)] as const,
-  }));
-
-  const { data: catData, isLoading: catLoading, refetch: refetchCat } =
-    useReadContracts({ contracts: catContracts, query: { refetchInterval: 30_000 } });
-
-  const { data: remData, isLoading: remLoading, refetch: refetchRem } =
-    useReadContracts({ contracts: remContracts, query: { refetchInterval: 30_000 } });
-
-  type RawCategory = readonly [
-    name: string,
-    price: bigint,
-    maxSupply: bigint,
-    totalMinted: bigint,
-    metadataURI: string,
-    exists: boolean,
-  ];
-
-  const categories: TicketCategory[] = (catData ?? [])
-    .map((entry, i) => {
-      if (entry.status !== 'success') return null;
-      const raw = entry.result as RawCategory;
-      if (!raw[5]) return null; // exists === false
-      const rem =
-        remData?.[i]?.status === 'success'
-          ? (remData[i].result as bigint)
-          : BigInt(0);
-      return {
-        tokenId: BigInt(i + 1),
-        name: raw[0],
-        price: raw[1],
-        maxSupply: raw[2],
-        totalMinted: raw[3],
-        metadataURI: raw[4],
-        exists: raw[5],
-        remaining: rem,
-      } as TicketCategory;
-    })
-    .filter((c): c is TicketCategory => c !== null);
-
-  return {
-    categories,
-    isLoading: catLoading || remLoading,
-    refetch: () => { refetchCat(); refetchRem(); },
-  };
-}
-
-export function useUserBalance(tokenId: bigint) {
-  const { address } = useAccount();
-  return useReadContract({
-    ...BASE,
-    functionName: 'balanceOf',
-    args: address ? [address, tokenId] : undefined,
-    query: { enabled: !!address },
+/** ETH balance of ONE ticket contract (admin). */
+export function useContractEthBalance(contractAddress?: string) {
+  return useBalance({
+    address: contractAddress as Address | undefined,
+    query: { enabled: !!contractAddress, refetchInterval: 15_000 },
   });
 }
 
-export function useMintForETH() {
-  const {
-    writeContract,
-    data: hash,
-    isPending: isWritePending,
-    error: writeError,
-    reset,
-  } = useWriteContract();
+/**
+ * ETH balances of MANY ticket contracts at once (admin tickets table /
+ * collect-ETH sums). Keyed by lowercased contract address.
+ */
+export function useContractEthBalances(addresses: string[]) {
+  const publicClient = usePublicClient();
+  const unique = Array.from(new Set(addresses.map((a) => a.toLowerCase())));
 
-  const {
-    isLoading: isConfirming,
-    isSuccess: isConfirmed,
-    error: confirmError,
-  } = useWaitForTransactionReceipt({ hash });
-
-  const mint = (tokenId: bigint, price: bigint) => {
-    writeContract({
-      ...BASE,
-      functionName: 'mintForETH',
-      args: [tokenId],
-      value: price,
-    });
-  };
-
-  return {
-    mint,
-    hash,
-    isWritePending,
-    isConfirming,
-    isConfirmed,
-    error: writeError ?? confirmError,
-    reset,
-  };
+  return useQuery({
+    queryKey: ['contract-eth-balances', unique],
+    enabled: !!publicClient && unique.length > 0,
+    refetchInterval: 15_000,
+    queryFn: async () => {
+      const out: Record<string, bigint> = {};
+      await Promise.all(
+        unique.map(async (addr) => {
+          out[addr] = await publicClient!.getBalance({
+            address: addr as Address,
+          });
+        })
+      );
+      return out;
+    },
+  });
 }
 
-export function useCreateCategory() {
+/* ------------------------------------------------------------------ */
+/* Writes                                                              */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Public ETH purchase: buy(tokenId, quantity) on a given ticket contract,
+ * with value == quantity * price EXACTLY (contract reverts otherwise).
+ */
+export function useBuyTickets() {
   const {
     writeContract,
     data: hash,
@@ -154,51 +200,23 @@ export function useCreateCategory() {
     error: confirmError,
   } = useWaitForTransactionReceipt({ hash });
 
-  const createCategory = (
-    name: string,
-    priceWei: bigint,
-    maxSupply: bigint,
-    metadataURI: string
+  const buy = (
+    contractAddress: string,
+    tokenId: number,
+    quantity: number,
+    valueWei: bigint
   ) => {
     writeContract({
-      ...BASE,
-      functionName: 'createCategory',
-      args: [name, priceWei, maxSupply, metadataURI],
+      address: contractAddress as Address,
+      abi: TICKET_ABI,
+      functionName: 'buy',
+      args: [BigInt(tokenId), BigInt(quantity)],
+      value: valueWei,
     });
   };
 
   return {
-    createCategory,
-    hash,
-    isWritePending,
-    isConfirming,
-    isConfirmed,
-    error: writeError ?? confirmError,
-    reset,
-  };
-}
-
-export function useWithdraw() {
-  const {
-    writeContract,
-    data: hash,
-    isPending: isWritePending,
-    error: writeError,
-    reset,
-  } = useWriteContract();
-
-  const {
-    isLoading: isConfirming,
-    isSuccess: isConfirmed,
-    error: confirmError,
-  } = useWaitForTransactionReceipt({ hash });
-
-  const withdraw = () => {
-    writeContract({ ...BASE, functionName: 'withdraw' });
-  };
-
-  return {
-    withdraw,
+    buy,
     hash,
     isWritePending,
     isConfirming,

@@ -28,14 +28,7 @@ export default function RootLayout({
                 © {new Date().getFullYear()} TicketMaster · Billetterie on-chain
                 sur Ethereum
               </p>
-              <a
-                href={`https://sepolia.etherscan.io/address/${process.env.NEXT_PUBLIC_CONTRACT_ADDRESS}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="hover:text-ink-muted transition-colors underline underline-offset-2"
-              >
-                Contrat Sepolia ↗
-              </a>
+              <p>Contrats déployés sur Sepolia · un contrat par type de billet</p>
             </div>
           </footer>
         </Web3Provider>

@@ -1,31 +1,34 @@
 'use client';
 
 import { formatEther } from 'viem';
-import { useBalance } from 'wagmi';
-import { CONTRACT_ADDRESS, type TicketCategory } from '@/contracts/EventTicket1155';
 import { BarChart2, Ticket, TrendingUp, Wallet } from 'lucide-react';
 
-type Props = { categories: TicketCategory[] };
+type Props = {
+  ticketTypeCount: number;
+  totalSold: number;
+  totalSupply: number;
+  /** Sum of the ETH balances of all ticket contracts (wei). */
+  totalEthWei?: bigint;
+};
 
-export function DashboardStats({ categories }: Props) {
-  const { data: contractBalance } = useBalance({
-    address: CONTRACT_ADDRESS,
-    query: { refetchInterval: 15_000 },
-  });
-
-  const totalTickets = categories.reduce((sum, c) => sum + Number(c.maxSupply), 0);
-  const totalSold = categories.reduce((sum, c) => sum + Number(c.totalMinted), 0);
-  const fillPct = totalTickets > 0 ? Math.round((totalSold / totalTickets) * 100) : 0;
+export function DashboardStats({
+  ticketTypeCount,
+  totalSold,
+  totalSupply,
+  totalEthWei,
+}: Props) {
+  const fillPct = totalSupply > 0 ? Math.round((totalSold / totalSupply) * 100) : 0;
 
   const stats = [
-    { label: 'Catégories', value: categories.length.toString(), icon: BarChart2 },
-    { label: 'Billets vendus', value: `${totalSold} / ${totalTickets}`, icon: Ticket },
+    { label: 'Types de billets', value: ticketTypeCount.toString(), icon: BarChart2 },
+    { label: 'Billets vendus', value: `${totalSold} / ${totalSupply}`, icon: Ticket },
     { label: 'Taux de remplissage', value: `${fillPct}%`, icon: TrendingUp },
     {
       label: 'ETH collecté',
-      value: contractBalance
-        ? `${parseFloat(formatEther(contractBalance.value)).toFixed(4)} ETH`
-        : '—',
+      value:
+        totalEthWei !== undefined
+          ? `${parseFloat(formatEther(totalEthWei)).toFixed(4)} ETH`
+          : '—',
       icon: Wallet,
     },
   ];

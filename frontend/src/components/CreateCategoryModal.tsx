@@ -1,67 +1,76 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { parseEther } from 'viem';
-import { useCreateCategory } from '@/hooks/useTicketContract';
-import { X, Loader2, CheckCircle2, AlertCircle, Plus } from 'lucide-react';
+import { useState } from 'react';
+import { createTicket, type EventInfo } from '@/lib/api';
+import { X, Loader2, CheckCircle2, AlertCircle, Plus, Clock } from 'lucide-react';
 
 type Props = {
+  events: EventInfo[];
   onClose: () => void;
   onSuccess: () => void;
 };
 
-export function CreateCategoryModal({ onClose, onSuccess }: Props) {
-  const { createCategory, isWritePending, isConfirming, isConfirmed, error, reset } =
-    useCreateCategory();
-
+/**
+ * Creates a new ticket type via POST /create-ticket.
+ * The BACKEND deploys the contract and creates the on-chain category
+ * (deployment takes ~1-2 minutes).
+ */
+export function CreateCategoryModal({ events, onClose, onSuccess }: Props) {
   const [form, setForm] = useState({
-    name: '',
+    eventName: events[0]?.name ?? '',
+    ticketName: '',
+    description: '',
+    quantity: '',
     price: '',
-    maxSupply: '',
-    metadataURI: '',
   });
   const [step, setStep] = useState<'form' | 'pending' | 'success' | 'error'>('form');
   const [formError, setFormError] = useState('');
-
-  useEffect(() => {
-    if (isWritePending || isConfirming) setStep('pending');
-    if (isConfirmed) {
-      setStep('success');
-      onSuccess();
-    }
-    if (error) setStep('error');
-  }, [isWritePending, isConfirming, isConfirmed, error, onSuccess]);
+  const [apiError, setApiError] = useState('');
 
   const validate = (): boolean => {
-    if (!form.name.trim()) {
-      setFormError('Le nom est requis.');
+    if (!form.eventName) {
+      setFormError('Sélectionnez un événement.');
+      return false;
+    }
+    if (!form.ticketName.trim()) {
+      setFormError('Le nom du billet est requis.');
       return false;
     }
     if (!form.price || isNaN(parseFloat(form.price)) || parseFloat(form.price) <= 0) {
       setFormError('Prix invalide.');
       return false;
     }
-    if (!form.maxSupply || isNaN(parseInt(form.maxSupply)) || parseInt(form.maxSupply) <= 0) {
-      setFormError('Quantité max invalide.');
+    if (!form.quantity || isNaN(parseInt(form.quantity)) || parseInt(form.quantity) <= 0) {
+      setFormError('Quantité invalide.');
       return false;
     }
     setFormError('');
     return true;
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validate()) return;
-    createCategory(
-      form.name.trim(),
-      parseEther(form.price),
-      BigInt(parseInt(form.maxSupply)),
-      form.metadataURI.trim()
-    );
+    setStep('pending');
+    setApiError('');
+    try {
+      await createTicket({
+        eventName: form.eventName,
+        ticketName: form.ticketName.trim(),
+        description: form.description.trim(),
+        quantity: parseInt(form.quantity),
+        price: parseFloat(form.price),
+      });
+      setStep('success');
+      onSuccess();
+    } catch (err) {
+      setApiError(err instanceof Error ? err.message : 'Erreur inconnue');
+      setStep('error');
+    }
   };
 
   const handleClose = () => {
-    reset();
+    if (step === 'pending') return;
     onClose();
   };
 
@@ -78,7 +87,7 @@ export function CreateCategoryModal({ onClose, onSuccess }: Props) {
               <div className="w-8 h-8 rounded-lg bg-ink flex items-center justify-center">
                 <Plus className="w-4 h-4 text-white" />
               </div>
-              <h2 className="font-semibold text-ink">Nouvelle catégorie</h2>
+              <h2 className="font-semibold text-ink">Nouveau type de billet</h2>
             </div>
             {step !== 'pending' && (
               <button
@@ -95,13 +104,43 @@ export function CreateCategoryModal({ onClose, onSuccess }: Props) {
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div>
                   <label className="block text-xs font-medium text-ink-muted mb-1.5">
-                    Nom de la catégorie *
+                    Événement *
+                  </label>
+                  <select
+                    className="input"
+                    value={form.eventName}
+                    onChange={(e) => setForm({ ...form, eventName: e.target.value })}
+                  >
+                    {events.length === 0 && (
+                      <option value="">Aucun événement disponible</option>
+                    )}
+                    {events.map((ev) => (
+                      <option key={ev.name} value={ev.name}>
+                        {ev.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-ink-muted mb-1.5">
+                    Nom du billet *
                   </label>
                   <input
                     className="input"
                     placeholder="ex: VIP, Standard, Gold…"
-                    value={form.name}
-                    onChange={(e) => setForm({ ...form, name: e.target.value })}
+                    value={form.ticketName}
+                    onChange={(e) => setForm({ ...form, ticketName: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-ink-muted mb-1.5">
+                    Description
+                  </label>
+                  <textarea
+                    className="input min-h-[72px] resize-y"
+                    placeholder="Décrivez ce type de billet…"
+                    value={form.description}
+                    onChange={(e) => setForm({ ...form, description: e.target.value })}
                   />
                 </div>
                 <div className="grid grid-cols-2 gap-3">
@@ -129,21 +168,16 @@ export function CreateCategoryModal({ onClose, onSuccess }: Props) {
                       step="1"
                       className="input"
                       placeholder="100"
-                      value={form.maxSupply}
-                      onChange={(e) => setForm({ ...form, maxSupply: e.target.value })}
+                      value={form.quantity}
+                      onChange={(e) => setForm({ ...form, quantity: e.target.value })}
                     />
                   </div>
                 </div>
-                <div>
-                  <label className="block text-xs font-medium text-ink-muted mb-1.5">
-                    URI Métadonnées (IPFS)
-                  </label>
-                  <input
-                    className="input"
-                    placeholder="ipfs://…"
-                    value={form.metadataURI}
-                    onChange={(e) => setForm({ ...form, metadataURI: e.target.value })}
-                  />
+
+                <div className="flex items-start gap-2 p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-700 text-xs">
+                  <Clock className="w-4 h-4 shrink-0 mt-0.5" />
+                  La plateforme déploie un contrat dédié sur Sepolia : la création
+                  prend environ 1 à 2 minutes. Laissez cette fenêtre ouverte.
                 </div>
 
                 {formError && (
@@ -153,8 +187,8 @@ export function CreateCategoryModal({ onClose, onSuccess }: Props) {
                   </div>
                 )}
 
-                <button type="submit" className="w-full btn-primary">
-                  Créer la catégorie
+                <button type="submit" className="w-full btn-primary" disabled={events.length === 0}>
+                  Créer le billet
                 </button>
               </form>
             )}
@@ -162,11 +196,10 @@ export function CreateCategoryModal({ onClose, onSuccess }: Props) {
             {step === 'pending' && (
               <div className="text-center py-6 space-y-3">
                 <Loader2 className="w-10 h-10 text-ink mx-auto spin-slow" />
-                <p className="text-ink font-medium">
-                  {isWritePending ? 'Confirmez dans MetaMask…' : 'Transaction en cours…'}
-                </p>
+                <p className="text-ink font-medium">Déploiement du contrat en cours…</p>
                 <p className="text-sm text-ink-muted">
-                  {isConfirming ? 'Attente de confirmation…' : 'Signez dans votre wallet.'}
+                  La plateforme déploie le contrat et crée la catégorie on-chain.
+                  Cela peut prendre 1 à 2 minutes.
                 </p>
               </div>
             )}
@@ -174,8 +207,11 @@ export function CreateCategoryModal({ onClose, onSuccess }: Props) {
             {step === 'success' && (
               <div className="text-center py-6 space-y-3">
                 <CheckCircle2 className="w-12 h-12 text-emerald-500 mx-auto" />
-                <p className="text-ink font-semibold text-lg">Catégorie créée !</p>
-                <button onClick={handleClose} className="w-full btn-secondary mt-2">
+                <p className="text-ink font-semibold text-lg">Billet créé !</p>
+                <p className="text-sm text-ink-muted">
+                  Le contrat a été déployé et la catégorie créée on-chain.
+                </p>
+                <button onClick={onClose} className="w-full btn-secondary mt-2">
                   Fermer
                 </button>
               </div>
@@ -186,19 +222,13 @@ export function CreateCategoryModal({ onClose, onSuccess }: Props) {
                 <div className="flex items-start gap-3 p-3 rounded-xl bg-red-50 border border-red-200">
                   <AlertCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
                   <div>
-                    <p className="text-sm font-medium text-red-600 mb-1">Transaction échouée</p>
+                    <p className="text-sm font-medium text-red-600 mb-1">Création échouée</p>
                     <p className="text-xs text-red-500/80 break-all">
-                      {error?.message?.slice(0, 120) ?? 'Erreur inconnue'}
+                      {apiError || 'Erreur inconnue'}
                     </p>
                   </div>
                 </div>
-                <button
-                  onClick={() => {
-                    reset();
-                    setStep('form');
-                  }}
-                  className="w-full btn-secondary"
-                >
+                <button onClick={() => setStep('form')} className="w-full btn-secondary">
                   Réessayer
                 </button>
               </div>

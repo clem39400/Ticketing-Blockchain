@@ -8,6 +8,7 @@ import static org.mockito.Mockito.when;
 
 import java.util.Date;
 import java.util.List;
+import java.util.Optional;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -36,7 +37,7 @@ class LookupEventInfoUsecaseTest {
     @Test
     void retourne_event_avec_ses_tickets() {
         EventDocument event = new EventDocument("Concert", "test", new Date(), null);
-        when(eventRepository.findFirstByName("Concert")).thenReturn(event);
+        when(eventRepository.findFirstByName("Concert")).thenReturn(Optional.of(event));
         when(ticketRepository.findByEventName("Concert"))
                 .thenReturn(List.of(new TicketDocument("Concert", "VIP", "Premier rang", 100, 49.99)));
 
@@ -51,7 +52,7 @@ class LookupEventInfoUsecaseTest {
 
     @Test
     void retourne_null_si_event_absent() {
-        when(eventRepository.findFirstByName("Inconnu")).thenReturn(null);
+        when(eventRepository.findFirstByName("Inconnu")).thenReturn(Optional.empty());
 
         EventInfo info = usecase.lookupEventInfo("Inconnu");
 

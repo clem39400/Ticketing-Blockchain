@@ -13,6 +13,7 @@ import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StreamUtils;
 import org.web3j.abi.FunctionEncoder;
+import org.web3j.abi.datatypes.Address;
 import org.web3j.abi.datatypes.Function;
 import org.web3j.abi.datatypes.Utf8String;
 import org.web3j.abi.datatypes.generated.Uint256;
@@ -113,6 +114,82 @@ public class BlockchainService {
             log.info("Categorie {} creee sur {} (prix {} wei, stock {})", tokenId, contractAddress, priceWei, maxSupply);
 
             return contractAddress;
+        } finally {
+            web3j.shutdown();
+        }
+    }
+
+    /**
+     * Mint des tickets pour un acheteur via {@code mint(address,uint256,uint256)}
+     * (reserve au owner du contrat, i.e. le compte deployeur de la plateforme).
+     *
+     * @param contractAddress adresse du contrat Ticket du type de ticket
+     * @param buyerAddress    adresse Ethereum de l'acheteur (destinataire des tokens)
+     * @param tokenId         identifiant de la categorie ERC-1155
+     * @param quantity        nombre de tickets a minter
+     * @return le hash de la transaction de mint
+     * @throws Exception si la config est absente ou si la transaction echoue
+     */
+    public String mintTickets(String contractAddress, String buyerAddress, BigInteger tokenId, BigInteger quantity)
+            throws Exception {
+        Function mint = new Function(
+                "mint",
+                List.of(new Address(buyerAddress), new Uint256(tokenId), new Uint256(quantity)),
+                Collections.emptyList());
+        String txHash = sendContractCall(contractAddress, mint, "mint");
+        log.info("Mint de {} ticket(s) (tokenId {}) pour {} sur {} (tx {})",
+                quantity, tokenId, buyerAddress, contractAddress, txHash);
+        return txHash;
+    }
+
+    /**
+     * Retire le solde ETH du contrat vers son owner via {@code withdraw()}
+     * (reserve au owner, i.e. le compte deployeur de la plateforme).
+     *
+     * @param contractAddress adresse du contrat Ticket
+     * @return le hash de la transaction de retrait
+     * @throws Exception si la config est absente ou si la transaction echoue
+     */
+    public String withdraw(String contractAddress) throws Exception {
+        Function withdraw = new Function("withdraw", Collections.emptyList(), Collections.emptyList());
+        String txHash = sendContractCall(contractAddress, withdraw, "withdraw");
+        log.info("Withdraw du contrat {} (tx {})", contractAddress, txHash);
+        return txHash;
+    }
+
+    /**
+     * Envoie une transaction d'appel de fonction sur un contrat depuis le compte
+     * deployeur, attend le recu et verifie son statut.
+     *
+     * @return le hash de la transaction confirmee
+     */
+    private String sendContractCall(String contractAddress, Function function, String label) throws Exception {
+        if (rpcUrl == null || rpcUrl.isBlank()) {
+            throw new IllegalStateException("blockchain.rpc-url (RPC_URL) non configure");
+        }
+        if (privateKey == null || privateKey.isBlank()) {
+            throw new IllegalStateException("blockchain.deployer-private-key (DEPLOYER_PRIVATE_KEY) non configure");
+        }
+
+        Web3j web3j = Web3j.build(new HttpService(rpcUrl));
+        try {
+            Credentials credentials = Credentials.create(privateKey);
+            RawTransactionManager txManager = new RawTransactionManager(web3j, credentials, chainId);
+            PollingTransactionReceiptProcessor receiptProcessor =
+                    new PollingTransactionReceiptProcessor(web3j, RECEIPT_POLL_MILLIS, RECEIPT_POLL_ATTEMPTS);
+            BigInteger gasPrice = web3j.ethGasPrice().send().getGasPrice();
+
+            EthSendTransaction callTx = txManager.sendTransaction(
+                    gasPrice, CALL_GAS_LIMIT, contractAddress, FunctionEncoder.encode(function), BigInteger.ZERO);
+            if (callTx.hasError()) {
+                throw new IllegalStateException("Echec " + label + ": " + callTx.getError().getMessage());
+            }
+            TransactionReceipt receipt = receiptProcessor.waitForTransactionReceipt(callTx.getTransactionHash());
+            if (!receipt.isStatusOK()) {
+                throw new IllegalStateException(
+                        "Transaction " + label + " revert (tx " + receipt.getTransactionHash() + ")");
+            }
+            return receipt.getTransactionHash();
         } finally {
             web3j.shutdown();
         }

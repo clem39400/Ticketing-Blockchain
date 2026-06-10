@@ -1,39 +1,55 @@
 'use client';
 
+import { useMemo } from 'react';
 import Link from 'next/link';
-import { formatEther } from 'viem';
-import { useAccount, useReadContracts } from 'wagmi';
-import { CONTRACT_ADDRESS, EVENT_TICKET_ABI } from '@/contracts/EventTicket1155';
-import { useEventName, useCategoryCount, useAllCategories } from '@/hooks/useTicketContract';
+import { useAccount } from 'wagmi';
+import { useQuery } from '@tanstack/react-query';
+import { getEvents, type EventInfo, type TicketInfo } from '@/lib/api';
+import { formatEventDate, formatEth } from '@/lib/format';
+import { useTicketBalances, ticketKey } from '@/hooks/useTicketContract';
 import { Ticket, Wallet, ArrowRight } from 'lucide-react';
 
-const EVENT_META = { date: '15 septembre 2025 · 20:00' };
+type OwnedTicket = { ticket: TicketInfo; count: number };
+type OwnedEvent = { event: EventInfo; owned: OwnedTicket[] };
 
 export default function MyTicketsPage() {
-  const { address, isConnected } = useAccount();
-  const { data: eventName } = useEventName();
-  const { data: count } = useCategoryCount();
-  const catCount = count ? Number(count) : 0;
-  const { categories, isLoading } = useAllCategories(catCount);
+  const { isConnected } = useAccount();
 
-  const { data: balances } = useReadContracts({
-    contracts: categories.map((c) => ({
-      address: CONTRACT_ADDRESS,
-      abi: EVENT_TICKET_ABI,
-      functionName: 'balanceOf' as const,
-      args: address ? ([address, c.tokenId] as const) : undefined,
-    })),
-    query: { enabled: !!address && categories.length > 0 },
+  const { data: events, isLoading: eventsLoading } = useQuery({
+    queryKey: ['events'],
+    queryFn: getEvents,
   });
 
-  const owned = categories
-    .map((c, i) => {
-      const bal = balances?.[i]?.status === 'success' ? Number(balances[i].result as bigint) : 0;
-      return { cat: c, count: bal };
-    })
-    .filter((o) => o.count > 0);
+  // One balanceOf(address, tokenId) call per ticket type, on ITS contract.
+  const allTickets = useMemo(
+    () => (events ?? []).flatMap((e) => e.tickets),
+    [events]
+  );
+  const { balances, isLoading: balancesLoading } = useTicketBalances(allTickets);
 
-  const totalTickets = owned.reduce((s, o) => s + o.count, 0);
+  const ownedByEvent: OwnedEvent[] = useMemo(() => {
+    if (!events) return [];
+    return events
+      .map((event) => ({
+        event,
+        owned: event.tickets
+          .map((ticket) => ({
+            ticket,
+            count:
+              balances[ticketKey(ticket.contractAddress, ticket.onChainTokenId)] ??
+              0,
+          }))
+          .filter((o) => o.count > 0),
+      }))
+      .filter((g) => g.owned.length > 0);
+  }, [events, balances]);
+
+  const totalTickets = ownedByEvent.reduce(
+    (s, g) => s + g.owned.reduce((s2, o) => s2 + o.count, 0),
+    0
+  );
+
+  const isLoading = eventsLoading || balancesLoading;
 
   return (
     <div className="max-w-3xl mx-auto px-4 sm:px-6 py-10">
@@ -54,14 +70,14 @@ export default function MyTicketsPage() {
             <div key={i} className="card h-24 animate-pulse" />
           ))}
         </div>
-      ) : owned.length === 0 ? (
+      ) : ownedByEvent.length === 0 ? (
         <EmptyState
           icon={<Ticket className="w-7 h-7 text-ink-faint" />}
           title="Aucun billet"
-          subtitle="Vous ne détenez pas encore de billet pour cet événement."
+          subtitle="Vous ne détenez pas encore de billet."
           action={
-            <Link href="/event" className="btn-primary mt-5">
-              Parcourir les billets
+            <Link href="/" className="btn-primary mt-5">
+              Parcourir les événements
               <ArrowRight className="w-4 h-4" />
             </Link>
           }
@@ -70,27 +86,43 @@ export default function MyTicketsPage() {
         <>
           <p className="text-sm text-ink-muted mb-4">
             {totalTickets} billet{totalTickets > 1 ? 's' : ''} ·{' '}
-            {(eventName as string) ?? 'Event'}
+            {ownedByEvent.length} événement{ownedByEvent.length > 1 ? 's' : ''}
           </p>
-          <div className="space-y-4">
-            {owned.map(({ cat, count }) => (
-              <div key={cat.tokenId.toString()} className="card p-5 flex items-center gap-4">
-                <div className="w-14 h-14 rounded-xl bg-ink flex items-center justify-center shrink-0">
-                  <Ticket className="w-6 h-6 text-white" strokeWidth={2} />
+          <div className="space-y-8">
+            {ownedByEvent.map(({ event, owned }) => (
+              <section key={event.name}>
+                <h2 className="font-bold text-ink mb-3">{event.name}</h2>
+                <div className="space-y-4">
+                  {owned.map(({ ticket, count }) => (
+                    <div
+                      key={ticketKey(ticket.contractAddress, ticket.onChainTokenId)}
+                      className="card p-5 flex items-center gap-4"
+                    >
+                      <div className="w-14 h-14 rounded-xl bg-ink flex items-center justify-center shrink-0">
+                        <Ticket className="w-6 h-6 text-white" strokeWidth={2} />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="font-bold text-ink truncate">{event.name}</p>
+                        <p className="text-sm text-ink-muted">
+                          {ticket.name} · {formatEth(ticket.price)} ·{' '}
+                          {formatEventDate(event.eventDate)}
+                        </p>
+                        <p className="text-[11px] text-ink-faint font-mono truncate mt-0.5">
+                          {ticket.contractAddress}
+                        </p>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <span className="badge border-line-strong text-ink font-semibold">
+                          × {count}
+                        </span>
+                        <p className="text-[11px] text-ink-faint mt-1 font-mono">
+                          #{ticket.onChainTokenId}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-                <div className="min-w-0 flex-1">
-                  <p className="font-bold text-ink truncate">{(eventName as string) ?? 'Event'}</p>
-                  <p className="text-sm text-ink-muted">
-                    {cat.name} · {formatEther(cat.price)} ETH · {EVENT_META.date}
-                  </p>
-                </div>
-                <div className="text-right shrink-0">
-                  <span className="badge border-line-strong text-ink font-semibold">
-                    × {count}
-                  </span>
-                  <p className="text-[11px] text-ink-faint mt-1 font-mono">#{cat.tokenId.toString()}</p>
-                </div>
-              </div>
+              </section>
             ))}
           </div>
         </>
