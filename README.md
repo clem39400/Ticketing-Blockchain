@@ -64,3 +64,10 @@ $ forge --help
 $ anvil --help
 $ cast --help
 ```
+
+
+
+BACKEND 
+
+docker compose up -d        # depuis ticketingAPI/
+./mvnw spring-boot:run
