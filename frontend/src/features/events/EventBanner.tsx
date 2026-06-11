@@ -27,7 +27,13 @@ type Props = {
 export function EventBanner({ name, className, src }: Props) {
   if (src) {
     // eslint-disable-next-line @next/next/no-img-element
-    return <img src={src} alt={name} className={clsx('object-cover w-full h-full', className)} />;
+    return (
+      <img
+        src={src}
+        alt={name}
+        className={clsx('object-cover w-full h-full', className)}
+      />
+    );
   }
 
   const pattern = PATTERNS[hash(name) % PATTERNS.length];
@@ -40,7 +46,10 @@ export function EventBanner({ name, className, src }: Props) {
         className
       )}
     >
-      <Ticket className="absolute -right-6 -bottom-6 w-40 h-40 text-white/[0.06]" strokeWidth={1} />
+      <Ticket
+        className="absolute -right-6 -bottom-6 w-40 h-40 text-white/[0.06]"
+        strokeWidth={1}
+      />
       <span className="relative px-6 text-center text-white/90 font-extrabold tracking-tight text-xl sm:text-2xl line-clamp-2">
         {name}
       </span>

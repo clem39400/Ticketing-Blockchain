@@ -11,6 +11,7 @@ type Props = {
   totalEthWei?: bigint;
 };
 
+/** Four headline metric cards at the top of the admin dashboard. */
 export function DashboardStats({
   ticketTypeCount,
   totalSold,

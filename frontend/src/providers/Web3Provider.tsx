@@ -10,7 +10,14 @@ export function Web3Provider({ children }: { children: React.ReactNode }) {
     () =>
       new QueryClient({
         defaultOptions: {
-          queries: { staleTime: 30_000, retry: 1 },
+          queries: {
+            // PERF: keep query results warm so page-to-page navigation
+            // renders cached data instantly instead of refetching.
+            staleTime: 60_000,
+            gcTime: 10 * 60_000,
+            retry: 1,
+            refetchOnWindowFocus: false,
+          },
         },
       })
   );

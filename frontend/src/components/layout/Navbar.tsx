@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { ConnectWalletButton } from './ConnectWalletButton';
+import { ConnectWalletButton } from '@/components/wallet/ConnectWalletButton';
 import { Ticket } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -23,7 +23,9 @@ export function Navbar() {
             <div className="w-8 h-8 rounded-lg bg-accent flex items-center justify-center group-hover:scale-105 transition-transform">
               <Ticket className="w-[18px] h-[18px] text-white" strokeWidth={2.5} />
             </div>
-            <span className="font-extrabold tracking-tight text-ink text-[15px]">TicketMaster</span>
+            <span className="font-extrabold tracking-tight text-ink text-[15px]">
+              TicketMaster
+            </span>
           </Link>
 
           <nav className="hidden sm:flex items-center gap-1">
@@ -35,7 +37,7 @@ export function Navbar() {
                   href={href}
                   className={clsx(
                     'px-3 py-1.5 rounded-lg text-sm font-medium transition-colors',
-                    active ? 'text-ink' : 'text-ink-faint hover:text-ink'
+                    active ? 'text-ink bg-page' : 'text-ink-faint hover:text-ink'
                   )}
                 >
                   {label}
